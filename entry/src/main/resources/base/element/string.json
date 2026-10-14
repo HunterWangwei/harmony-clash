@@ -1,0 +1,7 @@
+{
+  "string": [
+    { "name": "module_desc", "value": "Clash remote controller" },
+    { "name": "EntryAbility_desc", "value": "Control Clash Verge from your phone" },
+    { "name": "EntryAbility_label", "value": "Clash Remote" }
+  ]
+}

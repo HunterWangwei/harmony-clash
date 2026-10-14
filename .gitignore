@@ -1,0 +1,22 @@
+/node_modules
+/oh_modules
+**/oh_modules
+/local.properties
+/.idea
+**/build
+/.hvigor
+.cxx
+/.clangd
+/.clang-format
+/.clang-tidy
+**/.test
+/.appanalyzer
+/.tmp
+# Prebuilt Go core and its header, produced by tools/build-core.js.
+/entry/libs
+# Machine-specific signing material (see hvigorfile.ts).
+/signing.local.json5
+*.p12
+*.p7b
+*.cer
+*.csr

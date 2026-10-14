@@ -1,0 +1,13 @@
+{
+  "apiType": "stageMode",
+  "buildOption": {
+    "externalNativeOptions": {
+      "path": "./src/main/cpp/CMakeLists.txt",
+      "arguments": "",
+      "cppFlags": "",
+      // x86_64 for the emulator, arm64-v8a for real devices; build both with tools/build-core.js.
+      "abiFilters": ["x86_64", "arm64-v8a"]
+    }
+  },
+  "targets": [{ "name": "default" }]
+}

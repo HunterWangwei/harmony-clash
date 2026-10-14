@@ -1,0 +1,6 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "Remote controller for Clash Verge / Mihomo on HarmonyOS",
+  "dependencies": {},
+  "devDependencies": {}
+}
