@@ -2,7 +2,7 @@ import { connection, http } from '@kit.NetworkKit';
 import { util } from '@kit.ArkTS';
 import { FileUtil } from './FileUtil';
 import { Prefs, Profile } from './Prefs';
-import { LOCAL_MIXED_PORT } from './Runtime';
+import { LOCAL_MIXED_PORT, LOCAL_PROXY_USER } from './Runtime';
 
 interface UserInfo {
   upload: number;
@@ -72,7 +72,13 @@ export class ProfileStore {
 
   private static async fetchOnce(url: string, viaCore: boolean): Promise<http.HttpResponse> {
     const req = http.createHttp();
-    const proxy: connection.HttpProxy = { host: '127.0.0.1', port: LOCAL_MIXED_PORT, exclusionList: [] };
+    const proxy: connection.HttpProxy = {
+      host: '127.0.0.1',
+      port: LOCAL_MIXED_PORT,
+      exclusionList: [],
+      username: LOCAL_PROXY_USER,
+      password: Prefs.secret()
+    };
     try {
       const resp = await req.request(url, {
         method: http.RequestMethod.GET,

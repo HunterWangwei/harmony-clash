@@ -1,5 +1,11 @@
 # 架构说明
 
+## 版本
+
+- 应用版本：`AppScope/app.json5` 的 `versionName` / `versionCode`，运行时通过 `bundleManager` 读取（`common/AppInfo.ets`）
+- 内核版本：`core/MIHOMO_VERSION`，编译时写入 `libmihomo.so`，运行时通过 NAPI `version()` 读取
+- 首页底部和「设置 → 关于」同时显示两者
+
 ## 分层
 
 ```
@@ -28,7 +34,7 @@ libmihomo.so（Go c-shared）
 | --- | --- | --- |
 | `external-controller` | `127.0.0.1:19090` + 随机密钥 | 本机其他应用也能访问 127.0.0.1，必须带密钥 |
 | `allow-lan` / `dns.listen` | 关闭 | 手机不应向局域网暴露代理和 DNS |
-| `mixed-port` | 17890 | 订阅更新可以经内核代理下载 |
+| `mixed-port` | 17890，要求认证（`clash` / 控制接口密钥），清空 `skip-auth-prefixes` | 订阅更新可以经内核代理下载；本机其他应用不能借用代理 |
 | `tun` | 启用，绑定 VPN fd，gVisor 栈，关闭自动路由 | 路由由系统 VPN 负责 |
 | `tun.mtu` | 1500 | 必须与 VpnConfig 一致，桌面配置常写 9000 |
 | `dns` | 未启用时开启 fake-ip | 规则分流依赖内核处理 DNS |
@@ -56,12 +62,21 @@ gVisor 的 `fdbased.IsSocketFD` 会对 fd 调 `fstat` 来判断它是不是 sock
 - `LazyForEach` 的数据源对同一个监听器只能用一套通知接口。`common/ListSource.ets` 统一用 `onDatasetChange`，与 `onDataReloaded` / `onDataAdd` 混用会报错 401 导致崩溃
 - 长列表（日志、代理节点）用 `LazyForEach` 或 `ListItemGroup` 按需构建；高频数据先缓冲再定时批量刷新
 
-### 5. 模拟器无法启动 VPN
+### 5. IPv6
+
+VpnConfig 同时配置 IPv4（`198.18.0.1/30`）和 IPv6（`fdfe:dcba:9876::1/126`，与 Mihomo TUN 默认地址一致）地址，以及 `0.0.0.0/0`、`::/0` 两条路由，并设置 `isIPv6Accepted: true`。
+
+鸿蒙 VPN 扩展在解析 `addresses` 时会按每个地址改写 `isAcceptIPv4` / `isAcceptIPv6`，随后才读取显式的 `isIPv4Accepted` / `isIPv6Accepted`，所以以显式字段为准。真机上 IPv4 流量照常进入隧道；IPv6 默认路由是否被系统采纳与网络环境有关，目前观察到隧道只有 IPv6 地址段路由，后续需要在纯 IPv6 网络下继续验证。
+
+### 6. 模拟器无法启动 VPN
 
 首次连接时系统会通过 `com.huawei.hmos.vpndialog` 弹出授权框。部分模拟器镜像没有这个组件，`startVpnExtensionAbility` 不会返回也不会报错。`VpnControl` 加了 60 秒超时，超时后在首页提示原因。
 
 ## 安全
 
-- 控制接口只监听 127.0.0.1，密钥首次启动时用系统随机数生成（16 字节）
+- 控制接口只监听 127.0.0.1，密钥首次启动时用系统随机数生成（16 字节），保存在系统 Asset Store（`common/SecretStore.ets`）。旧版本存在 preferences 里的密钥会在首次读取时迁移并删除
+- 本地代理端口要求认证，密码与控制接口密钥相同
+- 远程模式的密钥同样存 Asset Store；未开启 HTTPS 时设置页会提示密钥明文传输
+- 配置和状态文件原子写入（临时文件 + fsync + rename）
 - 内核自己的出站连接通过 `protectProcessNet()` 和 `blockedApplications` 排除在 VPN 之外，避免流量回环
 - 签名材料只保存在本地 `signing.local.json5`，不入库

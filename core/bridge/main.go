@@ -16,6 +16,7 @@ import "C"
 
 import (
 	"encoding/json"
+	"net/netip"
 	"os"
 	"regexp"
 	"strings"
@@ -40,6 +41,10 @@ func cstr(s string) *C.char { return C.CString(s) }
 // Local HTTP/SOCKS port; loopback only because allow-lan is forced off.
 // The UI downloads subscriptions through it while the core is running.
 const localMixedPort = 17890
+
+// Username for the local mixed port; the password is the controller secret.
+// Must match LOCAL_PROXY_USER in entry/src/main/ets/common/Runtime.ets.
+const localProxyUser = "clash"
 
 // MTU of the system VPN interface; must match TUN_MTU in entry/src/main/ets/common/Runtime.ets.
 const tunMTU = 1500
@@ -80,6 +85,11 @@ func startCore(home, file, controller, secret string, tunFd int) error {
 	// Never expose proxy ports or DNS to the LAN from a phone.
 	raw.AllowLan = false
 	raw.MixedPort = localMixedPort
+	// Any app on the phone can reach 127.0.0.1, so require the controller secret on the
+	// local proxy too. Profiles' own users are dropped; they belong to desktop setups.
+	// Profiles may list skip-auth-prefixes (often 127.0.0.1/8) that would exempt loopback.
+	raw.Authentication = []string{localProxyUser + ":" + secret}
+	raw.SkipAuthPrefixes = []netip.Prefix{}
 	raw.DNS.Listen = ""
 	raw.GeoXUrl.GeoIp = mirrorGeo(raw.GeoXUrl.GeoIp)
 	raw.GeoXUrl.Mmdb = mirrorGeo(raw.GeoXUrl.Mmdb)

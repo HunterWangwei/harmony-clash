@@ -36,22 +36,31 @@
 
 ## 批次 4：健壮性与安全（P2）
 
-- [ ] 4.1 配置文件原子写入（临时文件 + rename）
-- [ ] 4.2 NAPI 参数类型 / `napi_status` 校验，async work 失败不泄漏
-- [ ] 4.3 本地 mixed-port 加认证；端口号单一来源（由 ArkTS 传入）
-- [ ] 4.4 IPv6：添加 `::/0` 路由或明确阻断，避免绕过 VPN
-- [ ] 4.5 远程密钥改用 Asset Store；HTTP 明文时提示
+- [x] 4.1 配置文件原子写入：写临时文件、fsync 后 rename，更新订阅时被杀也不会留下半截文件
+- [x] 4.2 NAPI 校验参数类型并抛 TypeError；创建或排队 async work 失败时释放内存（`QueueWork`）
+- [x] 4.3 本地 mixed-port 要求认证（用户 `clash`，密码为控制接口密钥），并清空配置里的 `skip-auth-prefixes`。真机验证：无凭据 407、错误 403、正确 200
+- [x] 4.4 IPv6：VPN 增加 IPv6 地址和 `::/0` 路由，`isIPv6Accepted` 改为 true。真机验证 IPv4 照常走隧道；IPv6 默认路由是否生效受系统限制，见架构文档
+- [x] 4.5 本机和远程密钥改存 Asset Store（加密、不随备份导出），旧版本存在 preferences 里的密钥首次读取时自动迁移；远程未开 HTTPS 时提示明文传输
 
 ## 批次 5：整洁与功能（P3）
 
-- [ ] 5.1 合并 `importUrl` / `importText` 重复逻辑；SettingsView 只读一次 `Prefs.remote()`
+- [ ] 5.1 合并 `importUrl` / `importText` 重复逻辑（SettingsView 只读一次 `Prefs.remote()` 已在批次 4 完成）
 - [ ] 5.2 支持 base64 / 分享链接订阅（Mihomo `common/convert`）
 - [ ] 5.3 颜色、文案移入 resources（深色模式、多语言）
 - [ ] 5.4 单元测试：Go `applyFilter` / `mirrorGeo` / `MihomoParseGroups`；ArkTS `parseUserInfo` / `nameFromDisposition`
 
 ## 变更日志
 
-### 2026-10-14 · 批次 2：性能
+版本号在 `AppScope/app.json5`：`versionName` 为 `主.次.修订`，`versionCode` 为 `主×1000000 + 次×1000 + 修订`。应用首页底部和「设置 → 关于」都会显示当前版本和内核版本。
+
+### 1.1.0 · 2026-10-14 · 批次 4：健壮性与安全
+
+- 安全：本地代理端口必须认证；密钥改存系统 Asset Store；远程 HTTP 明文提示
+- 健壮性：配置原子写入；NAPI 参数校验和失败清理
+- 网络：VPN 同时接管 IPv6
+- 新增：首页和设置页显示应用版本、内核版本
+
+### 1.0.0 · 2026-10-14 · 批次 2：性能
 
 - 首页：速度和流量走 `/traffic` WebSocket，轮询从每秒一次全量连接列表降为 3 秒一次只取连接数；应用进入后台时停止轮询和推送
 - 代理：分组测速一个请求完成；代理组改用 `ListItemGroup`，展开几百个节点不再卡顿；离线解析配置移到工作线程
@@ -59,7 +68,7 @@
 - 修复：首页统计数字不刷新（`@Builder` 用位置参数传基本类型时不会随状态更新，改为对象参数）
 - 修复：日志页在高频日志下崩溃（同一个 `LazyForEach` 数据源混用 `onDataReloaded` 和 `onDatasetChange`，ArkUI 报 401）
 
-### 2026-10-14 · 首次发布
+### 1.0.0 · 2026-10-14 · 首次发布
 
 - 修复：Go 内核无法在鸿蒙上加载（0.1）、连上 VPN 无法上网（0.4）、签名不生效（0.3）
 - 新增：arm64 真机支持、内核日志转发 hilog、VPN 启动 60 秒超时提示

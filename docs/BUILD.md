@@ -87,13 +87,19 @@ node tools/hdc.js -t <设备> install -r entry/build/default/outputs/default/ent
 node tools/hdc.js -t <设备> shell "hilog -x" | grep -E "Mihomo|ClashVpn"
 ```
 
-在电脑上访问手机里的内核 API（密钥在应用「设置」页）：
+在电脑上访问手机里的内核 API（密钥在应用「设置」页；本地代理端口 17890 也需要用户 `clash` 加同一个密钥认证）：
 
 ```bash
 node tools/hdc.js -t <设备> fport tcp:19091 tcp:19090
 ```
 
 之后请求 `http://127.0.0.1:19091`，带上 `Authorization: Bearer <密钥>`。
+
+## 发布新版本
+
+1. 修改 `AppScope/app.json5` 的 `versionName` 和 `versionCode`（规则见 [OPTIMIZATION.md](../OPTIMIZATION.md#变更日志)），同步 `entry/oh-package.json5` 的 `version`
+2. 在 OPTIMIZATION.md 的变更日志里新增一节
+3. 重新编译、真机验证后提交，并打 tag：`git tag v<版本号>`
 
 ## 更新 Mihomo
 

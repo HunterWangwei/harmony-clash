@@ -3,6 +3,8 @@ export const CONTROLLER_HOST: string = '127.0.0.1';
 export const CONTROLLER_PORT: number = 19090;
 // Must match localMixedPort in core/bridge/main.go.
 export const LOCAL_MIXED_PORT: number = 17890;
+// Must match localProxyUser in core/bridge/main.go; the password is the controller secret.
+export const LOCAL_PROXY_USER: string = 'clash';
 // Must match tunMTU in core/bridge/main.go.
 export const TUN_MTU: number = 1500;
 export const RUNTIME_FILE: string = 'runtime.json';

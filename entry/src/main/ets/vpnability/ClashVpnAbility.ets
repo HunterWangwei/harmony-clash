@@ -9,6 +9,9 @@ import { CONTROLLER_HOST, CONTROLLER_PORT, RUNTIME_FILE, RuntimeConfig, STATE_FI
 const TAG = 'ClashVpn';
 // Inside Mihomo's default fake-ip range so DNS hijack and TUN addressing agree.
 const TUN_ADDR = '198.18.0.1';
+// Mihomo's default TUN IPv6 address. Routing ::/0 into the tunnel keeps IPv6 traffic from
+// bypassing the VPN (and leaking the real address) on dual-stack networks.
+const TUN_ADDR6 = 'fdfe:dcba:9876::1';
 
 export default class ClashVpnAbility extends VpnExtensionAbility {
   private conn: vpnExtension.VpnConnection | null = null;
@@ -51,18 +54,27 @@ export default class ClashVpnAbility extends VpnExtensionAbility {
     hilog.info(0x0000, TAG, 'protected');
 
     const config: vpnExtension.VpnConfig = {
-      addresses: [{ address: { address: TUN_ADDR, family: 1 }, prefixLength: 30 }],
+      addresses: [
+        { address: { address: TUN_ADDR, family: 1 }, prefixLength: 30 },
+        { address: { address: TUN_ADDR6, family: 2 }, prefixLength: 126 }
+      ],
       routes: [{
         interface: '',
         destination: { address: { address: '0.0.0.0', family: 1 }, prefixLength: 0 },
         gateway: { address: '0.0.0.0', family: 1 },
         hasGateway: false,
         isDefaultRoute: true
+      }, {
+        interface: '',
+        destination: { address: { address: '::', family: 2 }, prefixLength: 0 },
+        gateway: { address: '::', family: 2 },
+        hasGateway: false,
+        isDefaultRoute: true
       }],
       dnsAddresses: ['198.18.0.2'],
       mtu: TUN_MTU,
       isIPv4Accepted: true,
-      isIPv6Accepted: false,
+      isIPv6Accepted: true,
       isBlocking: false,
       blockedApplications: [this.context.applicationInfo.name]
     };

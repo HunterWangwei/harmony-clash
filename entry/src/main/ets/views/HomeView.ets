@@ -1,6 +1,7 @@
 import { common } from '@kit.AbilityKit';
 import { webSocket } from '@kit.NetworkKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { AppInfo } from '../common/AppInfo';
 import { TrafficFrame } from '../common/ClashApi';
 import { Core } from '../common/Core';
 import { formatBytes, formatSpeed } from '../common/Format';
@@ -258,6 +259,9 @@ export struct HomeView {
           }
         }
         .padding(16).width('100%').backgroundColor(Color.White).borderRadius(8)
+
+        Text(`版本 ${AppInfo.appVersion()} · 内核 ${AppInfo.coreVersion()}`)
+          .fontSize(12).fontColor('#9AA0A6').width('100%').textAlign(TextAlign.Center)
       }.padding(12)
     }.width('100%').height('100%').align(Alignment.Top)
   }

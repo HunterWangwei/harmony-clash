@@ -5,14 +5,43 @@
 
 namespace {
 
-std::string GetString(napi_env env, napi_value value) {
+// Reads a JS string into out. Returns false (and throws a TypeError) for non-strings, so a
+// bad call from ArkTS fails loudly instead of handing the Go core an empty path.
+bool GetString(napi_env env, napi_value value, const char *what, std::string &out) {
     size_t len = 0;
-    napi_get_value_string_utf8(env, value, nullptr, 0, &len);
+    if (napi_get_value_string_utf8(env, value, nullptr, 0, &len) != napi_ok) {
+        std::string msg = std::string(what) + " must be a string";
+        napi_throw_type_error(env, nullptr, msg.c_str());
+        return false;
+    }
     // Extra byte for the terminator NAPI writes; trimmed afterwards.
-    std::string out(len + 1, '\0');
+    out.assign(len + 1, '\0');
     napi_get_value_string_utf8(env, value, &out[0], len + 1, &len);
     out.resize(len);
-    return out;
+    return true;
+}
+
+// Creates the promise and queues the async work. On failure frees the work item via
+// destroy, throws, and returns nullptr; otherwise returns the promise.
+template <typename W>
+napi_value QueueWork(napi_env env, W *w, const char *name, napi_async_execute_callback exec,
+                     napi_async_complete_callback done) {
+    napi_value promise = nullptr;
+    napi_value resource = nullptr;
+    if (napi_create_promise(env, &w->deferred, &promise) != napi_ok ||
+        napi_create_string_utf8(env, name, NAPI_AUTO_LENGTH, &resource) != napi_ok ||
+        napi_create_async_work(env, nullptr, resource, exec, done, w, &w->work) != napi_ok) {
+        delete w;
+        napi_throw_error(env, nullptr, "failed to create async work");
+        return nullptr;
+    }
+    if (napi_queue_async_work(env, w->work) != napi_ok) {
+        napi_delete_async_work(env, w->work);
+        delete w;
+        napi_throw_error(env, nullptr, "failed to queue async work");
+        return nullptr;
+    }
+    return promise;
 }
 
 struct StartWork {
@@ -61,23 +90,21 @@ napi_value Start(napi_env env, napi_callback_info info) {
         return nullptr;
     }
     auto *w = new StartWork();
-    w->home = GetString(env, args[0]);
-    w->config = GetString(env, args[1]);
-    w->controller = GetString(env, args[2]);
-    w->secret = GetString(env, args[3]);
+    if (!GetString(env, args[0], "homeDir", w->home) || !GetString(env, args[1], "configFile", w->config) ||
+        !GetString(env, args[2], "controller", w->controller) || !GetString(env, args[3], "secret", w->secret)) {
+        delete w;
+        return nullptr;
+    }
     if (argc >= 5) {
         int32_t fd = 0;
-        napi_get_value_int32(env, args[4], &fd);
+        if (napi_get_value_int32(env, args[4], &fd) != napi_ok) {
+            delete w;
+            napi_throw_type_error(env, nullptr, "tunFd must be a number");
+            return nullptr;
+        }
         w->tunFd = fd;
     }
-
-    napi_value promise;
-    napi_create_promise(env, &w->deferred, &promise);
-    napi_value name;
-    napi_create_string_utf8(env, "MihomoStart", NAPI_AUTO_LENGTH, &name);
-    napi_create_async_work(env, nullptr, name, StartExecute, StartComplete, w, &w->work);
-    napi_queue_async_work(env, w->work);
-    return promise;
+    return QueueWork(env, w, "MihomoStart", StartExecute, StartComplete);
 }
 
 napi_value Stop(napi_env env, napi_callback_info) {
@@ -133,15 +160,11 @@ napi_value ParseGroups(napi_env env, napi_callback_info info) {
         return nullptr;
     }
     auto *w = new ParseWork();
-    w->file = GetString(env, args[0]);
-
-    napi_value promise;
-    napi_create_promise(env, &w->deferred, &promise);
-    napi_value name;
-    napi_create_string_utf8(env, "MihomoParseGroups", NAPI_AUTO_LENGTH, &name);
-    napi_create_async_work(env, nullptr, name, ParseExecute, ParseComplete, w, &w->work);
-    napi_queue_async_work(env, w->work);
-    return promise;
+    if (!GetString(env, args[0], "configFile", w->file)) {
+        delete w;
+        return nullptr;
+    }
+    return QueueWork(env, w, "MihomoParseGroups", ParseExecute, ParseComplete);
 }
 
 } // namespace
