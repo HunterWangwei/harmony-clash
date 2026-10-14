@@ -67,6 +67,12 @@ node tools/build.js
 
 `build-profile.json5` 的 product 已设置 `"signingConfig": "default"`，名称需要与签名配置一致。
 
+DevEco 每次打开 Signing Configs 或重新签名，都可能把签名配置写回 `build-profile.json5`。克隆后执行一次下面的命令启用提交检查，提交里带有签名材料时会被拒绝：
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## 安装与调试
 
 `tools/hdc.js` 封装了 SDK 里的 hdc：
