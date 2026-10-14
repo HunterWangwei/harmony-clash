@@ -42,14 +42,14 @@ export class Core {
 
   // Groups read straight from the active profile while the core is stopped,
   // with saved selections overlaid so the user can pick nodes before connecting.
-  static offlineGroups(): OfflineGroups {
+  static async offlineGroups(): Promise<OfflineGroups> {
     const id = Prefs.activeId();
     if (id.length === 0) {
       return { groups: [], error: '请先在「订阅」中导入并选择一个配置' };
     }
     let parsed: ParseResult;
     try {
-      parsed = JSON.parse(bridge.parseGroups(ProfileStore.path(id))) as ParseResult;
+      parsed = JSON.parse(await bridge.parseGroups(ProfileStore.path(id))) as ParseResult;
     } catch (e) {
       return { groups: [], error: `解析配置失败: ${(e as Error).message}` };
     }

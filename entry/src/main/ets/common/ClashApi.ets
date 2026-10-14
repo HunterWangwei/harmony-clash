@@ -77,10 +77,12 @@ export interface ProxyGroup {
   all: string[];
 }
 
-export interface TrafficSummary {
+// One frame of the /traffic WebSocket: current speed plus running totals, in bytes.
+export interface TrafficFrame {
   up: number;
   down: number;
-  count: number;
+  upTotal: number;
+  downTotal: number;
 }
 
 const GROUP_TYPES: string[] = ['Selector', 'URLTest', 'Fallback', 'LoadBalance', 'Relay'];
@@ -175,6 +177,23 @@ export class ClashApi {
     await this.request(http.RequestMethod.PUT, `/proxies/${encodeURIComponent(group)}`, JSON.stringify(body));
   }
 
+  // Tests every member of a group in one request; the core runs the probes concurrently.
+  // Members that time out are absent from the response and are recorded as 0.
+  async groupDelay(group: string, members: string[]): Promise<void> {
+    const url = encodeURIComponent('https://www.gstatic.com/generate_204');
+    let result: Record<string, number> = {};
+    try {
+      const raw = await this.request(http.RequestMethod.GET,
+        `/group/${encodeURIComponent(group)}/delay?timeout=5000&url=${url}`);
+      result = JSON.parse(raw) as Record<string, number>;
+    } catch (e) {
+      // Whole-group failure: mark everything as timed out below.
+    }
+    members.forEach((m: string) => {
+      this.delays.set(m, result[m] ?? 0);
+    });
+  }
+
   async delay(proxy: string): Promise<number> {
     const url = encodeURIComponent('https://www.gstatic.com/generate_204');
     try {
@@ -189,9 +208,9 @@ export class ClashApi {
     }
   }
 
-  async traffic(): Promise<TrafficSummary> {
+  async connectionCount(): Promise<number> {
     const c = JSON.parse(await this.request(http.RequestMethod.GET, '/connections')) as ConnectionsResp;
-    return { up: c.uploadTotal, down: c.downloadTotal, count: c.connections?.length ?? 0 };
+    return c.connections?.length ?? 0;
   }
 
   async closeAllConnections(): Promise<void> {
@@ -208,9 +227,17 @@ export class ClashApi {
   }
 
   // Mihomo accepts the secret as a query token on WebSocket endpoints.
-  logsUrl(level: string): string {
+  private wsUrl(path: string): string {
     const scheme = this.cfg.https ? 'wss' : 'ws';
-    return `${scheme}://${this.cfg.host}:${this.cfg.port}/logs?level=${level}` +
-      `&token=${encodeURIComponent(this.cfg.secret)}`;
+    const sep = path.includes('?') ? '&' : '?';
+    return `${scheme}://${this.cfg.host}:${this.cfg.port}${path}${sep}token=${encodeURIComponent(this.cfg.secret)}`;
+  }
+
+  logsUrl(level: string): string {
+    return this.wsUrl(`/logs?level=${level}`);
+  }
+
+  trafficUrl(): string {
+    return this.wsUrl('/traffic');
   }
 }

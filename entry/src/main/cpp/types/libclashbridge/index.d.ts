@@ -3,4 +3,4 @@ export const start: (homeDir: string, configFile: string, controller: string, se
 export const stop: () => void;
 export const isRunning: () => boolean;
 export const version: () => string;
-export const parseGroups: (configFile: string) => string;
+export const parseGroups: (configFile: string) => Promise<string>;

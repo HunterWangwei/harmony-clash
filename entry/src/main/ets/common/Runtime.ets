@@ -8,6 +8,8 @@ export const TUN_MTU: number = 1500;
 export const RUNTIME_FILE: string = 'runtime.json';
 export const STATE_FILE: string = 'vpn_state.json';
 export const VPN_ABILITY: string = 'ClashVpnAbility';
+// AppStorage key: true while the UI ability is in the foreground.
+export const FOREGROUND_KEY: string = 'appForeground';
 
 // Written by the UI before starting the VPN; read by the VPN extension.
 export interface RuntimeConfig {

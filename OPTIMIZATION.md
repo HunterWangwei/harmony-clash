@@ -20,10 +20,10 @@
 
 ## 批次 2：性能（P1）
 
-- [ ] 2.1 首页每秒拉全量 `/connections` 且后台不停：改用 `/traffic` WebSocket，页面不可见时暂停
-- [ ] 2.2 测速逐节点请求：改用 `/group/{name}/delay`
-- [ ] 2.3 代理节点列表、日志列表改 `LazyForEach`；日志批量刷新
-- [ ] 2.4 `parseGroups` 在 UI 主线程同步执行：改为异步 NAPI
+- [x] 2.1 首页每秒拉全量 `/connections` 且后台不停：速度和总量改用 `/traffic` WebSocket，连接数 3 秒拉一次，应用退到后台时暂停
+- [x] 2.2 测速逐节点请求：改用 `/group/{name}/delay`，一个请求测完整组
+- [x] 2.3 日志改 `LazyForEach` + 每 300ms 批量刷新（上限 500 行）；代理组改 `ListItemGroup`，展开的节点按需构建
+- [x] 2.4 `parseGroups` 改为异步 NAPI，在工作线程解析
 
 ## 批次 3：构建（P1）
 
@@ -50,6 +50,14 @@
 - [ ] 5.4 单元测试：Go `applyFilter` / `mirrorGeo` / `MihomoParseGroups`；ArkTS `parseUserInfo` / `nameFromDisposition`
 
 ## 变更日志
+
+### 2026-10-14 · 批次 2：性能
+
+- 首页：速度和流量走 `/traffic` WebSocket，轮询从每秒一次全量连接列表降为 3 秒一次只取连接数；应用进入后台时停止轮询和推送
+- 代理：分组测速一个请求完成；代理组改用 `ListItemGroup`，展开几百个节点不再卡顿；离线解析配置移到工作线程
+- 日志：`LazyForEach` 按需渲染，消息先缓冲再每 300ms 批量刷新，debug 级别下不再卡顿
+- 修复：首页统计数字不刷新（`@Builder` 用位置参数传基本类型时不会随状态更新，改为对象参数）
+- 修复：日志页在高频日志下崩溃（同一个 `LazyForEach` 数据源混用 `onDataReloaded` 和 `onDatasetChange`，ArkUI 报 401）
 
 ### 2026-10-14 · 首次发布
 

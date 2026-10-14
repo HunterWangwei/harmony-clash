@@ -33,25 +33,27 @@ export struct ProxiesView {
     this.errorMsg = '';
     try {
       if (this.coreUp) {
-        this.groups = await Core.api.groups();
-        this.offline = false;
+        try {
+          this.groups = await Core.api.groups();
+          this.offline = false;
+          return;
+        } catch (e) {
+          // Fall through to the offline view.
+        }
+      }
+      if (Prefs.remoteEnabled()) {
+        this.groups = [];
+        this.offline = true;
+        this.errorMsg = '无法连接远程控制器';
         return;
       }
-    } catch (e) {
-      // Fall through to the offline view.
+      const r = await Core.offlineGroups();
+      this.groups = r.groups;
+      this.offline = true;
+      this.errorMsg = r.error;
     } finally {
       this.loading = false;
     }
-    if (Prefs.remoteEnabled()) {
-      this.groups = [];
-      this.offline = true;
-      this.errorMsg = '无法连接远程控制器';
-      return;
-    }
-    const r = Core.offlineGroups();
-    this.groups = r.groups;
-    this.offline = true;
-    this.errorMsg = r.error;
   }
 
   async choose(group: ProxyGroup, proxy: string): Promise<void> {
@@ -91,13 +93,12 @@ export struct ProxiesView {
       return;
     }
     this.testing = group.name;
-    const batch = 8;
-    for (let i = 0; i < group.all.length; i += batch) {
-      const slice = group.all.slice(i, i + batch);
-      await Promise.all(slice.map((p: string) => Core.api.delay(p)));
+    try {
+      await Core.api.groupDelay(group.name, group.all);
+    } finally {
       this.delayTick++;
+      this.testing = '';
     }
-    this.testing = '';
   }
 
   delayLabel(p: string, _tick: number): string {
@@ -112,49 +113,43 @@ export struct ProxiesView {
   }
 
   @Builder
-  GroupCard(group: ProxyGroup) {
-    Column() {
-      Row({ space: 8 }) {
-        Column({ space: 2 }) {
-          Text(group.name).fontSize(15).fontWeight(FontWeight.Medium).maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(`${group.type} · ${group.now}`).fontSize(12).fontColor('#5F6368').maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-        if (this.testing === group.name) {
-          LoadingProgress().width(28).height(28)
-        } else {
-          Button({ type: ButtonType.Circle }) {
-            SymbolGlyph($r('sys.symbol.average_speed')).fontSize(18)
-          }
-          .width(32).height(32).backgroundColor('#F1F3F4').enabled(this.testing.length === 0)
-          .onClick(() => { this.testGroup(group); })
+  GroupHeader(group: ProxyGroup) {
+    Row({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text(group.name).fontSize(15).fontWeight(FontWeight.Medium).maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${group.type} · ${group.now}`).fontSize(12).fontColor('#5F6368').maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+      if (this.testing === group.name) {
+        LoadingProgress().width(28).height(28)
+      } else {
+        Button({ type: ButtonType.Circle }) {
+          SymbolGlyph($r('sys.symbol.average_speed')).fontSize(18)
         }
-        SymbolGlyph(this.expanded === group.name ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-          .fontSize(18)
+        .width(32).height(32).backgroundColor('#F1F3F4').enabled(this.testing.length === 0)
+        .onClick(() => { this.testGroup(group); })
       }
-      .width('100%').padding(12)
-      .onClick(() => { this.expanded = this.expanded === group.name ? '' : group.name; })
-
-      if (this.expanded === group.name) {
-        Column() {
-          ForEach(group.all, (p: string) => {
-            Row() {
-              Text(p).fontSize(14).layoutWeight(1).maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .fontColor(group.now === p ? '#1A73E8' : '#202124')
-                .fontWeight(group.now === p ? FontWeight.Medium : FontWeight.Normal)
-              Text(this.delayLabel(p, this.delayTick)).fontSize(12)
-                .fontColor(delayColor(Core.api.cachedDelay(p)))
-            }
-            .width('100%').height(44).padding({ left: 12, right: 12 })
-            .backgroundColor(group.now === p ? '#E8F0FE' : Color.Transparent)
-            .onClick(() => { this.choose(group, p); })
-          }, (p: string) => `${group.name}/${p}`)
-        }
-      }
+      SymbolGlyph(this.expanded === group.name ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+        .fontSize(18)
     }
-    .width('100%').backgroundColor(Color.White).borderRadius(8).clip(true)
+    .width('100%').padding(12).backgroundColor(Color.White)
+    .onClick(() => { this.expanded = this.expanded === group.name ? '' : group.name; })
+  }
+
+  @Builder
+  ProxyRow(group: ProxyGroup, p: string) {
+    Row() {
+      Text(p).fontSize(14).layoutWeight(1).maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .fontColor(group.now === p ? '#1A73E8' : '#202124')
+        .fontWeight(group.now === p ? FontWeight.Medium : FontWeight.Normal)
+      Text(this.delayLabel(p, this.delayTick)).fontSize(12)
+        .fontColor(delayColor(Core.api.cachedDelay(p)))
+    }
+    .width('100%').height(44).padding({ left: 12, right: 12 })
+    .backgroundColor(group.now === p ? '#E8F0FE' : Color.White)
+    .onClick(() => { this.choose(group, p); })
   }
 
   build() {
@@ -175,11 +170,21 @@ export struct ProxiesView {
         Text(this.loading ? '加载中' : (this.errorMsg.length > 0 ? this.errorMsg : '配置中没有代理组'))
           .fontSize(14).fontColor('#5F6368').margin({ top: 40, left: 16, right: 16 })
       } else {
+        // Each group is a ListItemGroup so node rows of an expanded group are built lazily
+        // as they scroll into view, instead of all at once inside one card.
         List({ space: 10 }) {
           ForEach(this.groups, (g: ProxyGroup) => {
-            ListItem() { this.GroupCard(g) }
-          }, (g: ProxyGroup) => `${g.name}:${g.now}`)
+            ListItemGroup({ header: this.GroupHeader(g) }) {
+              if (this.expanded === g.name) {
+                ForEach(g.all, (p: string) => {
+                  ListItem() { this.ProxyRow(g, p) }
+                }, (p: string) => `${g.name}/${p}/${g.now === p}`)
+              }
+            }
+            .borderRadius(8).clip(true)
+          }, (g: ProxyGroup) => `${g.name}:${g.now}:${this.expanded === g.name}`)
         }
+        .cachedCount(8)
         .padding(12).layoutWeight(1)
       }
     }.width('100%').height('100%')

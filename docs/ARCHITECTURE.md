@@ -16,7 +16,7 @@ libmihomo.so（Go c-shared）
   Mihomo 内核 + gVisor 网络栈，读写 TUN fd
 ```
 
-- **UI 进程**只负责界面和配置。它和内核之间只通过 REST API 通信，所以同一套界面也能控制远程电脑上的 Clash Verge。
+- **UI 进程**只负责界面和配置。它和内核之间只通过 REST API 通信，所以同一套界面也能控制远程电脑上的 Clash Verge。实时数据走 WebSocket（首页 `/traffic`、日志页 `/logs`），连接数每 3 秒拉一次 `/connections`；应用进入后台时（`EntryAbility.onBackground` 写入 AppStorage 的 `appForeground`）全部暂停。
 - **VPN 进程**由系统拉起，内核运行在这里。UI 启动 VPN 前把配置路径和密钥写入 `files/runtime.json`，VPN 进程读取后启动内核，并把状态写入 `files/vpn_state.json`，供 UI 展示启动失败的原因。
 - UI 进程也会加载 `libclashbridge.so`，但只调用 `parseGroups`，在未连接时解析配置里的代理组。
 
@@ -50,7 +50,13 @@ gVisor 的 `fdbased.IsSocketFD` 会对 fd 调 `fstat` 来判断它是不是 sock
 
 鸿蒙会丢弃应用的 stdout，所以 `core/bridge` 订阅 Mihomo 的日志，通过 `OH_LOG_Print` 转发到 hilog，tag 为 `Mihomo`。
 
-### 4. 模拟器无法启动 VPN
+### 4. ArkUI 开发注意事项
+
+- `@Builder` 用位置参数传基本类型时只在首次构建时取值，状态变化后界面不刷新。需要随状态更新的值改为传对象参数，例如首页的 `Stat({ label, value })`
+- `LazyForEach` 的数据源对同一个监听器只能用一套通知接口。`common/ListSource.ets` 统一用 `onDatasetChange`，与 `onDataReloaded` / `onDataAdd` 混用会报错 401 导致崩溃
+- 长列表（日志、代理节点）用 `LazyForEach` 或 `ListItemGroup` 按需构建；高频数据先缓冲再定时批量刷新
+
+### 5. 模拟器无法启动 VPN
 
 首次连接时系统会通过 `com.huawei.hmos.vpndialog` 弹出授权框。部分模拟器镜像没有这个组件，`startVpnExtensionAbility` 不会返回也不会报错。`VpnControl` 加了 60 秒超时，超时后在首页提示原因。
 

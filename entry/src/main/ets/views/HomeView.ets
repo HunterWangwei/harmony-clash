@@ -1,8 +1,20 @@
 import { common } from '@kit.AbilityKit';
+import { webSocket } from '@kit.NetworkKit';
+import { BusinessError } from '@kit.BasicServicesKit';
+import { TrafficFrame } from '../common/ClashApi';
 import { Core } from '../common/Core';
 import { formatBytes, formatSpeed } from '../common/Format';
 import { Prefs, Profile } from '../common/Prefs';
+import { FOREGROUND_KEY } from '../common/Runtime';
 import { VpnControl } from '../common/VpnControl';
+
+interface StatParam {
+  label: string;
+  value: string;
+}
+
+// Reachability and connection count only; speed and totals arrive over the /traffic socket.
+const POLL_MS: number = 3000;
 
 const MODES: string[] = ['rule', 'global', 'direct'];
 const MODE_LABELS: string[] = ['规则', '全局', '直连'];
@@ -21,19 +33,81 @@ export struct HomeView {
   @State connCount: number = 0;
   @State profileName: string = '';
   @State remote: boolean = false;
+  @StorageProp(FOREGROUND_KEY) @Watch('onForegroundChange') foreground: boolean = true;
   // Failure from the last connect attempt; polling must not clear it.
   private startError: string = '';
   private timer: number = -1;
-  private lastUp: number = -1;
-  private lastDown: number = -1;
+  private ws: webSocket.WebSocket | null = null;
 
   aboutToAppear(): void {
-    this.poll();
-    this.timer = setInterval(() => { this.poll(); }, 1000);
+    this.resume();
   }
 
   aboutToDisappear(): void {
-    clearInterval(this.timer);
+    this.pause();
+  }
+
+  onForegroundChange(): void {
+    if (this.foreground) {
+      this.resume();
+    } else {
+      this.pause();
+    }
+  }
+
+  private resume(): void {
+    if (this.timer !== -1) {
+      return;
+    }
+    this.poll();
+    this.timer = setInterval(() => { this.poll(); }, POLL_MS);
+  }
+
+  private pause(): void {
+    if (this.timer !== -1) {
+      clearInterval(this.timer);
+      this.timer = -1;
+    }
+    this.closeTraffic();
+  }
+
+  private openTraffic(): void {
+    if (this.ws !== null) {
+      return;
+    }
+    const ws = webSocket.createWebSocket();
+    ws.on('message', (err: BusinessError, value: string | ArrayBuffer) => {
+      if (err || typeof value !== 'string') {
+        return;
+      }
+      try {
+        const f = JSON.parse(value) as TrafficFrame;
+        this.upSpeed = f.up;
+        this.downSpeed = f.down;
+        this.upTotal = f.upTotal;
+        this.downTotal = f.downTotal;
+      } catch (e) {
+        // Ignore malformed frames.
+      }
+    });
+    const drop = () => {
+      if (this.ws === ws) {
+        this.ws = null;
+      }
+    };
+    ws.on('close', drop);
+    ws.on('error', drop);
+    this.ws = ws;
+    ws.connect(Core.api.trafficUrl()).catch(drop);
+  }
+
+  private closeTraffic(): void {
+    if (this.ws !== null) {
+      this.ws.close().catch(() => {});
+      this.ws = null;
+    }
+    this.upSpeed = 0;
+    this.downSpeed = 0;
   }
 
   private ctx(): common.UIAbilityContext {
@@ -45,7 +119,12 @@ export struct HomeView {
   }
 
   async poll(): Promise<void> {
-    this.remote = Prefs.remoteEnabled();
+    const remote = Prefs.remoteEnabled();
+    if (remote !== this.remote) {
+      // Settings switched controllers; the open socket belongs to the old one.
+      this.closeTraffic();
+    }
+    this.remote = remote;
     const active = Prefs.profiles().find((p: Profile) => p.id === Prefs.activeId());
     this.profileName = active ? active.name : '未选择';
     const wasUp = this.coreUp;
@@ -54,18 +133,10 @@ export struct HomeView {
         this.version = await Core.api.version();
         this.mode = await Core.api.mode();
       }
-      const c = await Core.api.connections();
-      if (this.lastUp >= 0) {
-        this.upSpeed = Math.max(0, c.up - this.lastUp);
-        this.downSpeed = Math.max(0, c.down - this.lastDown);
-      }
-      this.lastUp = c.up;
-      this.lastDown = c.down;
-      this.upTotal = c.up;
-      this.downTotal = c.down;
-      this.connCount = c.list.length;
+      this.connCount = await Core.api.connectionCount();
       this.coreUp = true;
       this.errorMsg = '';
+      this.openTraffic();
       if (!wasUp && !this.remote) {
         // Apply nodes picked while disconnected.
         await Core.applySelections();
@@ -73,9 +144,7 @@ export struct HomeView {
     } catch (e) {
       this.coreUp = false;
       this.version = '';
-      this.lastUp = -1;
-      this.upSpeed = 0;
-      this.downSpeed = 0;
+      this.closeTraffic();
       if (!this.remote) {
         const st = VpnControl.state(this.ctx());
         this.errorMsg = st && st.state === 'error' ? st.message : this.startError;
@@ -96,6 +165,8 @@ export struct HomeView {
       } else {
         this.startError = '';
         Core.rebuild();
+        // The traffic socket may still point at a previous controller.
+        this.closeTraffic();
         await VpnControl.start(this.ctx());
       }
     } catch (e) {
@@ -104,8 +175,11 @@ export struct HomeView {
       this.errorMsg = msg;
       this.toast(msg);
     } finally {
-      // Give the extension a moment before the next poll reflects the new state.
-      setTimeout(() => { this.busy = false; }, 1500);
+      // Give the extension a moment, then poll right away instead of waiting a full interval.
+      setTimeout(() => {
+        this.busy = false;
+        this.poll();
+      }, 1500);
     }
   }
 
@@ -118,11 +192,13 @@ export struct HomeView {
     }
   }
 
+  // Takes an object so ArkUI passes it by reference and the Text updates when state changes;
+  // positional primitive arguments are copied once and never refresh.
   @Builder
-  Stat(label: string, value: string) {
+  Stat(p: StatParam) {
     Column({ space: 4 }) {
-      Text(value).fontSize(16).fontWeight(FontWeight.Medium).maxLines(1)
-      Text(label).fontSize(12).fontColor('#5F6368')
+      Text(p.value).fontSize(16).fontWeight(FontWeight.Medium).maxLines(1)
+      Text(p.label).fontSize(12).fontColor('#5F6368')
     }.layoutWeight(1).alignItems(HorizontalAlign.Start)
   }
 
@@ -169,16 +245,16 @@ export struct HomeView {
 
         Column({ space: 14 }) {
           Row() {
-            this.Stat('上传速度', formatSpeed(this.upSpeed))
-            this.Stat('下载速度', formatSpeed(this.downSpeed))
+            this.Stat({ label: '上传速度', value: formatSpeed(this.upSpeed) })
+            this.Stat({ label: '下载速度', value: formatSpeed(this.downSpeed) })
           }
           Row() {
-            this.Stat('上传总量', formatBytes(this.upTotal))
-            this.Stat('下载总量', formatBytes(this.downTotal))
+            this.Stat({ label: '上传总量', value: formatBytes(this.upTotal) })
+            this.Stat({ label: '下载总量', value: formatBytes(this.downTotal) })
           }
           Row() {
-            this.Stat('活动连接', this.connCount.toString())
-            this.Stat('模式', this.remote ? '远程控制' : '本机 VPN')
+            this.Stat({ label: '活动连接', value: this.connCount.toString() })
+            this.Stat({ label: '模式', value: this.remote ? '远程控制' : '本机 VPN' })
           }
         }
         .padding(16).width('100%').backgroundColor(Color.White).borderRadius(8)

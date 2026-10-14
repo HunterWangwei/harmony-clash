@@ -99,7 +99,31 @@ napi_value Version(napi_env env, napi_callback_info) {
     return result;
 }
 
-// parseGroups(configFile): string (JSON). Pure YAML parsing, fast enough to run synchronously.
+struct ParseWork {
+    napi_async_work work = nullptr;
+    napi_deferred deferred = nullptr;
+    std::string file;
+    std::string json;
+};
+
+void ParseExecute(napi_env, void *data) {
+    auto *w = static_cast<ParseWork *>(data);
+    char *json = MihomoParseGroups(&w->file[0]);
+    w->json = json;
+    MihomoFree(json);
+}
+
+void ParseComplete(napi_env env, napi_status, void *data) {
+    auto *w = static_cast<ParseWork *>(data);
+    napi_value result;
+    napi_create_string_utf8(env, w->json.c_str(), w->json.size(), &result);
+    napi_resolve_deferred(env, w->deferred, result);
+    napi_delete_async_work(env, w->work);
+    delete w;
+}
+
+// parseGroups(configFile): Promise<string> (JSON). Large subscriptions take long enough to
+// parse that running on the UI thread causes visible jank, so it runs on a worker.
 napi_value ParseGroups(napi_env env, napi_callback_info info) {
     size_t argc = 1;
     napi_value args[1] = {nullptr};
@@ -108,12 +132,16 @@ napi_value ParseGroups(napi_env env, napi_callback_info info) {
         napi_throw_error(env, nullptr, "parseGroups expects a file path");
         return nullptr;
     }
-    std::string file = GetString(env, args[0]);
-    char *json = MihomoParseGroups(&file[0]);
-    napi_value result;
-    napi_create_string_utf8(env, json, NAPI_AUTO_LENGTH, &result);
-    MihomoFree(json);
-    return result;
+    auto *w = new ParseWork();
+    w->file = GetString(env, args[0]);
+
+    napi_value promise;
+    napi_create_promise(env, &w->deferred, &promise);
+    napi_value name;
+    napi_create_string_utf8(env, "MihomoParseGroups", NAPI_AUTO_LENGTH, &name);
+    napi_create_async_work(env, nullptr, name, ParseExecute, ParseComplete, w, &w->work);
+    napi_queue_async_work(env, w->work);
+    return promise;
 }
 
 } // namespace
