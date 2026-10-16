@@ -62,13 +62,25 @@ gVisor 的 `fdbased.IsSocketFD` 会对 fd 调 `fstat` 来判断它是不是 sock
 - `LazyForEach` 的数据源对同一个监听器只能用一套通知接口。`common/ListSource.ets` 统一用 `onDatasetChange`，与 `onDataReloaded` / `onDataAdd` 混用会报错 401 导致崩溃
 - 长列表（日志、代理节点）用 `LazyForEach` 或 `ListItemGroup` 按需构建；高频数据先缓冲再定时批量刷新
 
-### 5. IPv6
+### 5. 常驻通知
+
+通知由 VPN 进程发布，因为它的生命周期正好等于"已连接"：
+
+- `ClashVpnAbility` 启动内核后每秒调用 NAPI `status()`（Go 侧 `MihomoStatus`，只读内存里的计数器），用固定通知 ID 更新内容；`teardown` 时切换为「未连接」
+- 应用启动时（`EntryAbility`）先请求通知权限，内核没在运行就发布「未连接」。两个进程用同一个通知 ID，后发布的直接替换先发布的
+- 节点名：从主分组沿 `Now()` 逐层解析到具体节点。负载均衡分组没有单一当前节点，改为取流量最大的代理连接的出站节点
+- 渠道用 `CONTENT_INFORMATION`（LEVEL_MIN）：不响铃、不弹横幅，每秒刷新也不打扰；内容没变化时最多每 10 秒重新发布一次
+- 点击通知通过 `WantAgent` 启动 `EntryAbility`；`tapDismissed: false`，点击后不会消失
+
+`isOngoing` / `isUnremovable` 在 SDK 中标注为 "Not supported currently"，三方应用无法做成不可划掉的通知；用户划掉后，最迟 10 秒内（速度有变化时下一秒）会重新出现。
+
+### 6. IPv6
 
 VpnConfig 同时配置 IPv4（`198.18.0.1/30`）和 IPv6（`fdfe:dcba:9876::1/126`，与 Mihomo TUN 默认地址一致）地址，以及 `0.0.0.0/0`、`::/0` 两条路由，并设置 `isIPv6Accepted: true`。
 
 鸿蒙 VPN 扩展在解析 `addresses` 时会按每个地址改写 `isAcceptIPv4` / `isAcceptIPv6`，随后才读取显式的 `isIPv4Accepted` / `isIPv6Accepted`，所以以显式字段为准。真机上 IPv4 流量照常进入隧道；IPv6 默认路由是否被系统采纳与网络环境有关，目前观察到隧道只有 IPv6 地址段路由，后续需要在纯 IPv6 网络下继续验证。
 
-### 6. 模拟器无法启动 VPN
+### 7. 模拟器无法启动 VPN
 
 首次连接时系统会通过 `com.huawei.hmos.vpndialog` 弹出授权框。部分模拟器镜像没有这个组件，`startVpnExtensionAbility` 不会返回也不会报错。`VpnControl` 加了 60 秒超时，超时后在首页提示原因。
 

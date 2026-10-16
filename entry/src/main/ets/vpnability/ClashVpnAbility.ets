@@ -3,6 +3,7 @@ import { VpnExtensionAbility, vpnExtension } from '@kit.NetworkKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import bridge from 'libclashbridge.so';
 import { FileUtil } from '../common/FileUtil';
+import { StatusNotification } from '../common/StatusNotification';
 import { CONTROLLER_HOST, CONTROLLER_PORT, RUNTIME_FILE, RuntimeConfig, STATE_FILE, TUN_MTU,
   VpnState } from '../common/Runtime';
 
@@ -12,11 +13,19 @@ const TUN_ADDR = '198.18.0.1';
 // Mihomo's default TUN IPv6 address. Routing ::/0 into the tunnel keeps IPv6 traffic from
 // bypassing the VPN (and leaking the real address) on dual-stack networks.
 const TUN_ADDR6 = 'fdfe:dcba:9876::1';
+const NOTIFY_MS: number = 1000;
+
+interface CoreStatus {
+  up: number;
+  down: number;
+  node: string;
+}
 
 export default class ClashVpnAbility extends VpnExtensionAbility {
   private conn: vpnExtension.VpnConnection | null = null;
   // Set when startup fails so onDestroy keeps the error visible to the UI.
   private failed: boolean = false;
+  private notifyTimer: number = -1;
 
   onCreate(want: Want): void {
     hilog.info(0x0000, TAG, 'onCreate');
@@ -84,9 +93,29 @@ export default class ClashVpnAbility extends VpnExtensionAbility {
     hilog.info(0x0000, TAG, 'core starting');
     await bridge.start(rt.home, rt.config, `${CONTROLLER_HOST}:${CONTROLLER_PORT}`, rt.secret, fd);
     this.writeState('running', bridge.version());
+    this.startNotify();
+  }
+
+  // This process lives exactly as long as the VPN, so it owns the status notification.
+  private startNotify(): void {
+    const tick = () => {
+      try {
+        const st = JSON.parse(bridge.status()) as CoreStatus;
+        StatusNotification.showConnected(this.context, st.up, st.down, st.node);
+      } catch (e) {
+        hilog.warn(0x0000, TAG, 'status failed');
+      }
+    };
+    tick();
+    this.notifyTimer = setInterval(tick, NOTIFY_MS);
   }
 
   private teardown(): void {
+    if (this.notifyTimer !== -1) {
+      clearInterval(this.notifyTimer);
+      this.notifyTimer = -1;
+    }
+    StatusNotification.showDisconnected(this.context);
     try {
       bridge.stop();
     } catch (e) {

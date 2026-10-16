@@ -23,12 +23,15 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/metacubex/mihomo/adapter/outboundgroup"
 	"github.com/metacubex/mihomo/config"
 	"github.com/metacubex/mihomo/constant"
 	"github.com/metacubex/mihomo/hub"
 	"github.com/metacubex/mihomo/hub/executor"
 	"github.com/metacubex/mihomo/hub/route"
 	"github.com/metacubex/mihomo/log"
+	"github.com/metacubex/mihomo/tunnel"
+	"github.com/metacubex/mihomo/tunnel/statistic"
 )
 
 var (
@@ -190,6 +193,98 @@ func MihomoIsRunning() C.int {
 		return 1
 	}
 	return 0
+}
+
+type statusInfo struct {
+	Up   int64  `json:"up"`
+	Down int64  `json:"down"`
+	Node string `json:"node"`
+}
+
+// resolveNode follows group selections (GLOBAL in global mode, otherwise the first group
+// in the profile) down to the concrete node, e.g. "节点选择 → 自动选择 → 香港 01" → "香港 01".
+func resolveNode() string {
+	proxies := tunnel.Proxies()
+	start := ""
+	switch tunnel.Mode() {
+	case tunnel.Direct:
+		return "直连"
+	case tunnel.Global:
+		start = "GLOBAL"
+	default:
+		// GLOBAL's members keep the profile order; its first group is the main selector.
+		if g, ok := proxies["GLOBAL"]; ok {
+			if sel, ok := g.Adapter().(outboundgroup.ProxyGroup); ok {
+				for _, p := range sel.Proxies() {
+					if _, isGroup := p.Adapter().(outboundgroup.ProxyGroup); isGroup {
+						start = p.Name()
+						break
+					}
+				}
+			}
+		}
+	}
+	name := start
+	for i := 0; i < 8 && name != ""; i++ {
+		p, ok := proxies[name]
+		if !ok {
+			break
+		}
+		g, ok := p.Adapter().(outboundgroup.ProxyGroup)
+		if !ok {
+			return name
+		}
+		next := g.Now()
+		if next == "" || next == name {
+			// Load-balance groups have no single current node; report the one carrying
+			// the most live traffic instead, falling back to the group name when idle.
+			if busy := busiestNode(); busy != "" {
+				return busy
+			}
+			return name
+		}
+		name = next
+	}
+	return name
+}
+
+// busiestNode returns the outbound node of the open proxied connection that has moved the
+// most bytes, or "" when only direct connections are open.
+func busiestNode() string {
+	best := ""
+	var bestBytes int64 = -1
+	statistic.DefaultManager.Range(func(c statistic.Tracker) bool {
+		info := c.Info()
+		// Chains are recorded outermost-last: Chain[0] is the concrete node.
+		if len(info.Chain) == 0 {
+			return true
+		}
+		node := info.Chain[0]
+		if node == "DIRECT" || node == "REJECT" {
+			return true
+		}
+		if n := info.UploadTotal.Load() + info.DownloadTotal.Load(); n > bestBytes {
+			best, bestBytes = node, n
+		}
+		return true
+	})
+	return best
+}
+
+// MihomoStatus returns {"up","down","node"} as JSON: current speeds in bytes/s and the node
+// the main group resolves to. Free with MihomoFree.
+//
+//export MihomoStatus
+func MihomoStatus() *C.char {
+	up, down := statistic.DefaultManager.Now()
+	info := statusInfo{Up: up, Down: down}
+	mu.Lock()
+	if running {
+		info.Node = resolveNode()
+	}
+	mu.Unlock()
+	b, _ := json.Marshal(info)
+	return cstr(string(b))
 }
 
 // MihomoVersion returns the core version; free with MihomoFree.

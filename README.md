@@ -1,6 +1,6 @@
 # Harmony Clash
 
-当前版本：1.1.0（内核 Mihomo v1.19.32）。更新内容见 [OPTIMIZATION.md](OPTIMIZATION.md#变更日志)。
+当前版本：1.2.0（内核 Mihomo v1.19.32）。更新内容见 [OPTIMIZATION.md](OPTIMIZATION.md#变更日志)。
 
 运行在 HarmonyOS NEXT 上的 Clash（Mihomo 内核）客户端，使用 ArkTS 编写界面，通过系统 VPN 扩展接管设备流量。也可以切换到远程模式，控制电脑上的 Clash Verge。
 
@@ -15,6 +15,7 @@
 - **连接与日志**：实时连接列表（可筛选、可断开），实时日志（按级别过滤）
 - **远程控制**：控制局域网内电脑上的 Clash Verge / Mihomo
 - **安全**：控制接口和本地代理都需要密钥，密钥保存在系统 Asset Store
+- **常驻通知**：通知栏显示当前节点和实时上下行速度，未连接时显示「未连接」，点击打开应用
 - **版本信息**：首页底部和「设置 → 关于」显示应用版本和内核版本
 
 ## 系统要求

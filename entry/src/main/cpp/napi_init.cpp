@@ -118,6 +118,16 @@ napi_value IsRunning(napi_env env, napi_callback_info) {
     return result;
 }
 
+// status(): string (JSON {"up","down","node"}). Reads in-memory counters only, so it is cheap
+// enough to call every second from the VPN process for the notification.
+napi_value Status(napi_env env, napi_callback_info) {
+    char *json = MihomoStatus();
+    napi_value result;
+    napi_create_string_utf8(env, json, NAPI_AUTO_LENGTH, &result);
+    MihomoFree(json);
+    return result;
+}
+
 napi_value Version(napi_env env, napi_callback_info) {
     char *v = MihomoVersion();
     napi_value result;
@@ -176,6 +186,7 @@ static napi_value Init(napi_env env, napi_value exports) {
         {"stop", nullptr, Stop, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"isRunning", nullptr, IsRunning, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"version", nullptr, Version, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"status", nullptr, Status, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"parseGroups", nullptr, ParseGroups, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);

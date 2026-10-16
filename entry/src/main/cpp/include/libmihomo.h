@@ -98,6 +98,7 @@ extern char* MihomoStartTun(char* homeDir, char* configFile, char* controller, c
 extern char* MihomoStart(char* homeDir, char* configFile, char* controller, char* secret);
 extern void MihomoStop(void);
 extern int MihomoIsRunning(void);
+extern char* MihomoStatus(void);
 extern char* MihomoVersion(void);
 extern void MihomoFree(char* p);
 extern char* MihomoParseGroups(char* configFile);

@@ -3,4 +3,6 @@ export const start: (homeDir: string, configFile: string, controller: string, se
 export const stop: () => void;
 export const isRunning: () => boolean;
 export const version: () => string;
+// JSON {"up","down","node"}: current speeds in bytes/s and the resolved current node.
+export const status: () => string;
 export const parseGroups: (configFile: string) => Promise<string>;
